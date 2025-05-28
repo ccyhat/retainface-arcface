@@ -15,8 +15,7 @@ public:
     int LoadModel(const std::string& model_dir);
 
     // Run predictor
-    int Run(std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FACEres,
-        std::vector<double>& times);
+    int Run(std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FACEres);
     void GetFeature(std::vector<std::string>& path,std::vector<cv::Mat> imgs);
     
 private:

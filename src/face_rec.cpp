@@ -6,12 +6,8 @@ int ARCFACE::LoadModel(const std::string& model_dir) {
         env = Ort::Env(ORT_LOGGING_LEVEL_WARNING, "FaceRecognization");
         session_options = Ort::SessionOptions();
         session_options.SetInterOpNumThreads(std::thread::hardware_concurrency());
-        session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-       
+        session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);      
         session = std::make_unique<Ort::Session>(env, model_dir.c_str(), session_options);
-
- 
-
         std::cout << "[INFO] ONNXRuntime environment created successfully." << std::endl;
     }
     catch (const std::exception& ex) {
@@ -20,13 +16,10 @@ int ARCFACE::LoadModel(const std::string& model_dir) {
     }
     return EXIT_SUCCESS;
 }
-int ARCFACE::Run(std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FACEres,
-    std::vector<double>& times) {
-
+int ARCFACE::Run(std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FACEres) {
     float ratio{};
     int x_off{};
     int y_off{};
-    auto preprocess_start = std::chrono::steady_clock::now();
     std::vector<Ort::Value> input_tensors;
     auto memory_info_handler = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtDeviceAllocator, OrtMemType::OrtMemTypeCPU);
     const size_t numInputNodes = this->session->GetInputCount();
@@ -54,14 +47,11 @@ int ARCFACE::Run(std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FAC
 
     InputNodeShapes[0] = {(int)imgs.size(),3,resize_imgs[0].rows,resize_imgs[0].cols };
    
-  
     input_tensors.push_back(Ort::Value::CreateTensor<float>(
         memory_info_handler, srcInputTensorValues.data(), srcInputTensorValues.size(), \
         InputNodeShapes[0].data(), InputNodeShapes[0].size()
     ));
-    auto preprocess_end = std::chrono::steady_clock::now();
 
-  
     std::vector<char*> OutputNodeNames;
     std::vector<std::vector<int64_t>> OutputNodeShapes;
     const size_t numOutputNodes = session->GetOutputCount();
@@ -72,51 +62,43 @@ int ARCFACE::Run(std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FAC
         OutputNodeShapes.emplace_back(session->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
     }
 
-    
-    auto inference_start = std::chrono::steady_clock::now();
     // Inference.
-  
-   
     auto output_tensors = session->Run(Ort::RunOptions{ nullptr }, InputNodeNames.data(), input_tensors.data(), \
         input_tensors.size(), OutputNodeNames.data(), OutputNodeNames.size());
     auto output_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
     float* pOutputData = (float*)output_tensors[0].GetTensorMutableData<float>();
     int out_num = std::accumulate(output_shape.begin(), output_shape.end(), 1,std::multiplies<int>());
     cv::Mat out_data(output_shape[0], output_shape[1], CV_32FC1, pOutputData);
-   
-
-
-
-
-    auto inference_end = std::chrono::steady_clock::now();
-
-    auto postprocess_start = std::chrono::steady_clock::now();
 
     for (int i = 0; i < out_data.rows; i++) {
-        
-        std::vector<float> tempfeature = out_data.rowRange(i,i+1);
-        float distance=0;
-        for(auto it :this->feature){
-            for(int j=0;j<tempfeature.size();j++){
-                distance=distance+pow(tempfeature[j]-it.feature[j],2);
-            }
-            if(distance<40){
-                FACEres[i].face_name=it.name;
-                FACEres[i].score=distance;
+        // 取出当前特征并归一化
+        cv::Mat tempfeature = out_data.row(i); // 1x128
+        cv::normalize(tempfeature, tempfeature);
+
+        float best_score = -1.0f;
+        std::string best_name = "unknown";
+        for (auto& it : this->feature) {
+            // 保证 dbfeature 也是 1x128 行向量
+            cv::Mat dbfeature = cv::Mat(it.feature);
+            if (dbfeature.rows != 1) dbfeature = dbfeature.reshape(1, 1);
+            cv::normalize(dbfeature, dbfeature);
+
+            // 计算余弦相似度
+            float cosine = tempfeature.dot(dbfeature);
+            if (cosine > best_score) {
+                best_score = cosine;
+                best_name = it.name;
             }
         }
+        // 阈值可根据实际情况调整（如 0.4~0.5）
+        if (best_score > 0.5f) {
+            FACEres[i].face_name = best_name;
+            FACEres[i].score = best_score;
+        } else {
+            FACEres[i].face_name = "unknown";
+            FACEres[i].score = best_score;
+        }
     }
-
-    auto postprocess_end = std::chrono::steady_clock::now();
-
-    std::chrono::duration<float> preprocess_diff =
-        preprocess_end - preprocess_start;
-    times.push_back(double(preprocess_diff.count() * 1000));
-    std::chrono::duration<float> inference_diff = inference_end - inference_start;
-    times.push_back(double(inference_diff.count() * 1000));
-    std::chrono::duration<float> postprocess_diff =
-        postprocess_end - postprocess_start;
-    times.push_back(double(postprocess_diff.count() * 1000));
     return 0;
 }
 void ARCFACE::GetFeature(std::vector<std::string>& path,std::vector<cv::Mat> imgs) {
@@ -156,8 +138,6 @@ void ARCFACE::GetFeature(std::vector<std::string>& path,std::vector<cv::Mat> img
         InputNodeShapes[0].data(), InputNodeShapes[0].size()
     ));
   
-
-
     std::vector<char*> OutputNodeNames;
     std::vector<std::vector<int64_t>> OutputNodeShapes;
     const size_t numOutputNodes = session->GetOutputCount();
@@ -167,11 +147,7 @@ void ARCFACE::GetFeature(std::vector<std::string>& path,std::vector<cv::Mat> img
         OutputNodeNames.emplace_back(strdup(session->GetOutputNameAllocated(i, allocator).get()));
         OutputNodeShapes.emplace_back(session->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
     }
-
-
     // Inference.
-
-
     auto output_tensors = session->Run(Ort::RunOptions{ nullptr }, InputNodeNames.data(), input_tensors.data(), \
         input_tensors.size(), OutputNodeNames.data(), OutputNodeNames.size());
     auto output_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();

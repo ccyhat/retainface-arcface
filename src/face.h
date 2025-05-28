@@ -15,9 +15,7 @@ public:
     void init(std::vector<std::string>& path);
 
 protected:
-    std::vector<double> time_info_det = { 0, 0, 0 };
-    std::vector<double> time_info_rec = { 0, 0, 0 };
-
+  
 
     void det(cv::Mat img, std::vector<FACEPredictResult>& face_results);
     void rec(std::vector<cv::Mat> img_list,std::vector<FACEPredictResult>& face_results);

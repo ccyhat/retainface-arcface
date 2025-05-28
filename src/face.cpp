@@ -19,22 +19,23 @@ std::vector<FACEPredictResult> FACE::face(cv::Mat img) {
     std::vector<cv::Mat>faces;
     // det
     this->det(img, face_result);
-
+    if (face_result.size() == 0) {
+        return face_result;
+    }
     // align
     for(auto it:face_result){
-        faces.push_back(img(it.box));
+        // 检查 box 是否在图片范围内
+        cv::Rect valid_box = it.box & cv::Rect(0, 0, img.cols, img.rows);
+        if (valid_box.width > 0 && valid_box.height > 0) {
+            faces.push_back(img(valid_box));
+        }
     }
-   
-    this->rec(faces,face_result);   
-    
+    this->rec(faces,face_result);
     return face_result;
 }
 void FACE::det(cv::Mat img, std::vector<FACEPredictResult>& face_results) {
     std::vector<double> det_times;
     this->detector->Run(img, face_results, det_times);
-    this->time_info_det[0] += det_times[0];
-    this->time_info_det[1] += det_times[1];
-    this->time_info_det[2] += det_times[2];
 }
 void FACE::init(std::vector<std::string>& path) {
     std::vector<cv::Mat>imgs;
@@ -49,6 +50,5 @@ void FACE::init(std::vector<std::string>& path) {
     this->recognizer->GetFeature(path,imgs);
 }
 void FACE::rec(std::vector<cv::Mat> img_list,std::vector<FACEPredictResult>& face_results){
-    std::vector<double> rec_times;
-    this->recognizer->Run(img_list,face_results,rec_times);
+    this->recognizer->Run(img_list,face_results);
 }

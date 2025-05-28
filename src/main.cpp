@@ -6,7 +6,7 @@
 #include <onnxruntime_cxx_api.h>
 #include"face.h"
 #include<fstream>
-//#include<string>
+
 
 
 int main()
@@ -18,12 +18,10 @@ int main()
 		std::cout<<"no img in folder"<<std::endl;
 		return 0;
 	}
+	
     FACE face;
     face.init(path);
-
-    // std::vector<cv::String> cv_all_img_names;
-    // cv_all_img_names.push_back("../img/Trump.jpeg");
-    // face(cv_all_img_names);
+	std::cout<<"init success"<<std::endl;
     // 1.创建视频采集对象;
 	 cv::VideoCapture cap;	
     // FACE face;
@@ -42,10 +40,17 @@ int main()
 		// 获取新的一帧;
 		cv::Mat frame;
 		cap >> frame; 
-		if (frame.empty())
-			return 0;
-        //cv::resize(frame , frame, cv::Size(640,640));
+		cv::flip(frame, frame, 1);
+		if (frame.empty()){
+			std::cout << "No frame captured from camera." << std::endl;
+			break;
+		}
         std::vector<FACEPredictResult>v=face.face(frame);
+
+		if(v.size()==0){
+			std::cout<<"no face detected"<<std::endl;
+			continue;
+		}
         for(int i=0;i<v.size();i++){
             cv::rectangle(frame,v[i].box,cv::Scalar(255,0,0));
             if(v[i].face_name!=""){
