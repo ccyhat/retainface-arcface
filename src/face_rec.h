@@ -3,38 +3,35 @@
 #include "preprocessor.h"
 #include "postprocessor.h"
 #include "utility.h"
-#include<list>
-class ARCFACE
-{
+#include <vector>
+#include <memory>
+
+class ARCFACE {
 public:
-    explicit ARCFACE(const std::string& model_dir,int img_size) {
-        this->img_size = img_size;
-        LoadModel(model_dir);
-    }
-    // Load Paddle inference model
-    int LoadModel(const std::string& model_dir);
+    ARCFACE(const std::string& model_path, int img_size);
+    int LoadModel(const std::string& model_path);
+    int Run(const std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FACEres);
+    void GetFeature(const std::vector<std::string>& paths, const std::vector<cv::Mat>& imgs);
 
-    // Run predictor
-    int Run(std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FACEres);
-    void GetFeature(std::vector<std::string>& path,std::vector<cv::Mat> imgs);
-    
 private:
-    int img_size;
+    int img_size_;
+    std::vector<float> mean_ = {123, 117, 104};
+    std::vector<float> scale_ = {1 / 0.229f, 1 / 0.224f, 1 / 0.225f};
 
-    std::vector<float> mean_ = { 123,117, 104 };//bgr
-    //104, 117, 123 
-    std::vector<float> scale_ = { 1 / 0.229f, 1 / 0.224f, 1 / 0.225f };
-
-    // pre-process
     ResizeLetterBox resize_op_;
     ARCNormalize normalize_op_;
     PermuteBatch permute_op_;
-    std::list<FaceData>  feature;
-    // post-process
-    ARCProcessor post_processor_;
-    Ort::Env env;
-    Ort::SessionOptions session_options;
-    std::unique_ptr<Ort::Session> session;
 
+    std::vector<FaceData> feature_db_;
+
+    Ort::Env env_;
+    Ort::SessionOptions session_options_;
+    std::unique_ptr<Ort::Session> session_;
+
+    std::vector<std::string> input_name_strs_, output_name_strs_;
+    std::vector<const char*> input_names_, output_names_;
+
+    void prepareIONameCache();
+    void extractFeature(const std::vector<cv::Mat>& imgs, cv::Mat& out_feature);
 };
 

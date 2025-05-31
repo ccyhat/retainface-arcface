@@ -1,54 +1,64 @@
 #include "face.h"
-FACE::FACE() {
-    this->detector.reset(new RETINA("../model/mobilenet0.25_Final.onnx",  0.8, 0.3));
-    this->recognizer.reset(new ARCFACE("../model/MFN.onnx", 112));
-    this->aligner.reset(new ALIGNMENT());
-}
-std::vector<std::vector<FACEPredictResult>> FACE::face(std::vector<cv::Mat> img_list) {
-    std::vector<std::vector<FACEPredictResult>> face_results;
-    for (int i = 0; i < img_list.size(); ++i) {
-        std::vector<FACEPredictResult> face_result = this->face(img_list[i]);
-        face_results.push_back(face_result);
-    }
 
+FACE::FACE()
+{
+    detector = std::make_unique<RETINA>("../model/mobilenet0.25_Final.onnx", 0.8, 0.3);
+    recognizer = std::make_unique<ARCFACE>("../model/MFN.onnx", 112);
+    aligner = std::make_unique<ALIGNMENT>();
+}
+
+std::vector<std::vector<FACEPredictResult>> FACE::face(const std::vector<cv::Mat>& img_list) {
+    std::vector<std::vector<FACEPredictResult>> face_results;
+    for (const auto& img : img_list) {
+        face_results.push_back(face(img));
+    }
     return face_results;
 }
-std::vector<FACEPredictResult> FACE::face(cv::Mat img) {
 
+std::vector<FACEPredictResult> FACE::face(const cv::Mat& img) {
     std::vector<FACEPredictResult> face_result;
-    std::vector<cv::Mat>faces;
-    // det
-    this->det(img, face_result);
-    if (face_result.size() == 0) {
-        return face_result;
-    }
-    // align
-    for(auto it:face_result){
-        // 检查 box 是否在图片范围内
-        cv::Rect valid_box = it.box & cv::Rect(0, 0, img.cols, img.rows);
-        if (valid_box.width > 0 && valid_box.height > 0) {
-            faces.push_back(img(valid_box));
-        }
-    }
-    this->rec(faces,face_result);
+    std::vector<cv::Mat> aligned_faces;
+    det(img, face_result, aligned_faces);
+    if (face_result.empty()) return face_result;
+    rec(aligned_faces, face_result);
     return face_result;
 }
-void FACE::det(cv::Mat img, std::vector<FACEPredictResult>& face_results) {
+
+void FACE::det(const cv::Mat& img, std::vector<FACEPredictResult>& face_results, std::vector<cv::Mat>& aligned_faces) {
     std::vector<double> det_times;
-    this->detector->Run(img, face_results, det_times);
-}
-void FACE::init(std::vector<std::string>& path) {
-    std::vector<cv::Mat>imgs;
-    for(auto it:path){
-        std::vector<FACEPredictResult> face_base;
-        cv::Mat img;
-        img=cv::imread(it);
-        this->det(img,face_base);
-        img=img(face_base[0].box);
-        imgs.push_back(img);
+    face_results.clear();
+    aligned_faces.clear();
+    detector->Run(const_cast<cv::Mat&>(img), face_results, det_times);
+    for (auto& res : face_results) {
+        cv::Rect valid_box = res.box & cv::Rect(0, 0, img.cols, img.rows);
+        if (valid_box.width > 0 && valid_box.height > 0) {
+            cv::Mat face_img = img(valid_box).clone();
+            if (do_align_) {
+                std::vector<FACEPredictResult> tmp_res{res};
+                aligner->Run(face_img, tmp_res);
+            }
+            aligned_faces.push_back(face_img);
+        }
     }
-    this->recognizer->GetFeature(path,imgs);
 }
-void FACE::rec(std::vector<cv::Mat> img_list,std::vector<FACEPredictResult>& face_results){
-    this->recognizer->Run(img_list,face_results);
+
+void FACE::rec(const std::vector<cv::Mat>& img_list, std::vector<FACEPredictResult>& face_results) {
+    recognizer->Run(img_list, face_results);
+}
+
+void FACE::init(const std::vector<std::string>& path) {
+    std::vector<cv::Mat> aligned_imgs;
+    std::vector<std::string> valid_paths;
+    for (const auto& p : path) {
+        cv::Mat img = cv::imread(p);
+        if (img.empty()) continue;
+        std::vector<FACEPredictResult> face_base;
+        std::vector<cv::Mat> aligned_faces;
+        det(img, face_base, aligned_faces);
+        if (!aligned_faces.empty()) {
+            aligned_imgs.push_back(aligned_faces[0]);
+            valid_paths.push_back(p);
+        }
+    }
+    recognizer->GetFeature(valid_paths, aligned_imgs);
 }

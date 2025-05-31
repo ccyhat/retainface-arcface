@@ -1,96 +1,114 @@
 #include "face_rec.h"
-#include<thread>
-int ARCFACE::LoadModel(const std::string& model_dir) {
-    try {
+#include <thread>
+#include <numeric>
+#include <iostream>
 
-        env = Ort::Env(ORT_LOGGING_LEVEL_WARNING, "FaceRecognization");
-        session_options = Ort::SessionOptions();
-        session_options.SetInterOpNumThreads(std::thread::hardware_concurrency());
-        session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);      
-        session = std::make_unique<Ort::Session>(env, model_dir.c_str(), session_options);
-        std::cout << "[INFO] ONNXRuntime environment created successfully." << std::endl;
-    }
-    catch (const std::exception& ex) {
-        std::cerr << "[ERROR] ONNXRuntime environment created failed : " << ex.what() << '\n';
+ARCFACE::ARCFACE(const std::string& model_path, int img_size)
+    : img_size_(img_size) {
+    LoadModel(model_path);
+}
+
+int ARCFACE::LoadModel(const std::string& model_path) {
+    try {
+        env_ = Ort::Env(ORT_LOGGING_LEVEL_WARNING, "FaceRecognization");
+        session_options_ = Ort::SessionOptions();
+        session_options_.SetInterOpNumThreads(std::thread::hardware_concurrency());
+        session_options_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        session_ = std::make_unique<Ort::Session>(env_, model_path.c_str(), session_options_);
+        prepareIONameCache();
+        std::cout << "[INFO] ArcFace ONNXRuntime environment created successfully." << std::endl;
+    } catch (const std::exception& ex) {
+        std::cerr << "[ERROR] ArcFace ONNXRuntime environment created failed : " << ex.what() << '\n';
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
 }
-int ARCFACE::Run(std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FACEres) {
-    float ratio{};
-    int x_off{};
-    int y_off{};
-    std::vector<Ort::Value> input_tensors;
-    auto memory_info_handler = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtDeviceAllocator, OrtMemType::OrtMemTypeCPU);
-    const size_t numInputNodes = this->session->GetInputCount();
-    std::vector<char*> InputNodeNames;
-    std::vector<std::vector<int64_t>> InputNodeShapes;
+
+void ARCFACE::prepareIONameCache() {
     Ort::AllocatorWithDefaultOptions allocator;
-    InputNodeNames.reserve(numInputNodes);
-    for (size_t i = 0; i < numInputNodes; i++)
-    {
-        InputNodeNames.emplace_back(strdup(session->GetInputNameAllocated(i, allocator).get()));
-        InputNodeShapes.emplace_back(session->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
+    input_name_strs_.clear();
+    input_names_.clear();
+    for (size_t i = 0; i < session_->GetInputCount(); ++i) {
+        auto name_alloc = session_->GetInputNameAllocated(i, allocator);
+        input_name_strs_.push_back(name_alloc.get());
     }
-    std::vector<cv::Mat>resize_imgs;
-    for (auto img : imgs) {
+    for (auto& s : input_name_strs_) input_names_.push_back(s.c_str());
+
+    output_name_strs_.clear();
+    output_names_.clear();
+    for (size_t i = 0; i < session_->GetOutputCount(); ++i) {
+        auto name_alloc = session_->GetOutputNameAllocated(i, allocator);
+        output_name_strs_.push_back(name_alloc.get());
+    }
+    for (auto& s : output_name_strs_) output_names_.push_back(s.c_str());
+}
+
+void ARCFACE::extractFeature(const std::vector<cv::Mat>& imgs, cv::Mat& out_feature) {
+    float ratio{};
+    int x_off{}, y_off{};
+    std::vector<cv::Mat> resize_imgs;
+    for (const auto& img : imgs) {
         cv::Mat resize_img;
         img.copyTo(resize_img);
-        
-        this->resize_op_.Run(img, resize_img, this->img_size,
-            ratio, x_off, y_off);
-        this->normalize_op_.Run(&resize_img);
+        resize_op_.Run(img, resize_img, img_size_, ratio, x_off, y_off);
+        normalize_op_.Run(&resize_img);
         resize_imgs.push_back(resize_img);
     }
     std::vector<float> srcInputTensorValues(imgs.size() * 3 * resize_imgs[0].rows * resize_imgs[0].cols, 0.0f);
-    this->permute_op_.Run(resize_imgs, srcInputTensorValues.data());
+    permute_op_.Run(resize_imgs, srcInputTensorValues.data());
+    std::vector<int64_t> input_shape = {(int)imgs.size(), 3, resize_imgs[0].rows, resize_imgs[0].cols};
 
-    InputNodeShapes[0] = {(int)imgs.size(),3,resize_imgs[0].rows,resize_imgs[0].cols };
-   
+    auto memory_info = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtDeviceAllocator, OrtMemType::OrtMemTypeCPU);
+    std::vector<Ort::Value> input_tensors;
     input_tensors.push_back(Ort::Value::CreateTensor<float>(
-        memory_info_handler, srcInputTensorValues.data(), srcInputTensorValues.size(), \
-        InputNodeShapes[0].data(), InputNodeShapes[0].size()
+        memory_info, srcInputTensorValues.data(), srcInputTensorValues.size(),
+        input_shape.data(), input_shape.size()
     ));
 
-    std::vector<char*> OutputNodeNames;
-    std::vector<std::vector<int64_t>> OutputNodeShapes;
-    const size_t numOutputNodes = session->GetOutputCount();
-    OutputNodeNames.reserve(numOutputNodes);
-    for (size_t i = 0; i < numOutputNodes; i++)
-    {
-        OutputNodeNames.emplace_back(strdup(session->GetOutputNameAllocated(i, allocator).get()));
-        OutputNodeShapes.emplace_back(session->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
-    }
-
-    // Inference.
-    auto output_tensors = session->Run(Ort::RunOptions{ nullptr }, InputNodeNames.data(), input_tensors.data(), \
-        input_tensors.size(), OutputNodeNames.data(), OutputNodeNames.size());
+    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_.data(), input_tensors.data(),
+                                        input_tensors.size(), output_names_.data(), output_names_.size());
     auto output_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
-    float* pOutputData = (float*)output_tensors[0].GetTensorMutableData<float>();
-    int out_num = std::accumulate(output_shape.begin(), output_shape.end(), 1,std::multiplies<int>());
-    cv::Mat out_data(output_shape[0], output_shape[1], CV_32FC1, pOutputData);
+    float* pOutputData = output_tensors[0].GetTensorMutableData<float>();
+    out_feature = cv::Mat(output_shape[0], output_shape[1], CV_32FC1, pOutputData).clone();
+}
 
-    for (int i = 0; i < out_data.rows; i++) {
-        // 取出当前特征并归一化
-        cv::Mat tempfeature = out_data.row(i); // 1x128
+void ARCFACE::GetFeature(const std::vector<std::string>& paths, const std::vector<cv::Mat>& imgs) {
+    cv::Mat features;
+    extractFeature(imgs, features);
+    feature_db_.clear();
+    for (int i = 0; i < features.rows; ++i) {
+        FaceData obj;
+        obj.id = i;
+        std::string temp = Utility::basename(paths[i]);
+        size_t dotPos = temp.find_last_of('.');
+        if (dotPos != std::string::npos) temp = temp.substr(0, dotPos);
+        obj.name = temp;
+        obj.feature.assign(features.ptr<float>(i), features.ptr<float>(i) + features.cols);
+        feature_db_.push_back(obj);
+    }
+}
+
+int ARCFACE::Run(const std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FACEres) {
+    if (imgs.empty() || feature_db_.empty()) return -1;
+    cv::Mat features;
+    extractFeature(imgs, features);
+
+    FACEres.resize(features.rows);
+    for (int i = 0; i < features.rows; ++i) {
+        cv::Mat tempfeature = features.row(i);
         cv::normalize(tempfeature, tempfeature);
 
         float best_score = -1.0f;
         std::string best_name = "unknown";
-        for (auto& it : this->feature) {
-            // 保证 dbfeature 也是 1x128 行向量
-            cv::Mat dbfeature = cv::Mat(it.feature);
-            if (dbfeature.rows != 1) dbfeature = dbfeature.reshape(1, 1);
+        for (const auto& it : feature_db_) {
+            cv::Mat dbfeature(1, tempfeature.cols, CV_32FC1, const_cast<float*>(it.feature.data()));
             cv::normalize(dbfeature, dbfeature);
-
-            // 计算余弦相似度
             float cosine = tempfeature.dot(dbfeature);
             if (cosine > best_score) {
                 best_score = cosine;
                 best_name = it.name;
             }
         }
-        // 阈值可根据实际情况调整（如 0.4~0.5）
         if (best_score > 0.5f) {
             FACEres[i].face_name = best_name;
             FACEres[i].score = best_score;
@@ -100,71 +118,4 @@ int ARCFACE::Run(std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult>& FAC
         }
     }
     return 0;
-}
-void ARCFACE::GetFeature(std::vector<std::string>& path,std::vector<cv::Mat> imgs) {
-    float ratio{};
-    int x_off{};
-    int y_off{};
-    std::vector<Ort::Value> input_tensors;
-    auto memory_info_handler = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtDeviceAllocator, OrtMemType::OrtMemTypeCPU);
-    const size_t numInputNodes = this->session->GetInputCount();
-    std::vector<char*> InputNodeNames;
-    std::vector<std::vector<int64_t>> InputNodeShapes;
-    Ort::AllocatorWithDefaultOptions allocator;
-    InputNodeNames.reserve(numInputNodes);
-    for (size_t i = 0; i < numInputNodes; i++)
-    {
-        InputNodeNames.emplace_back(strdup(session->GetInputNameAllocated(i, allocator).get()));
-        InputNodeShapes.emplace_back(session->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
-    }
-    std::vector<cv::Mat>resize_imgs;
-    for (auto img : imgs) {
-        cv::Mat resize_img;
-        img.copyTo(resize_img);
-
-        this->resize_op_.Run(img, resize_img, this->img_size,
-            ratio, x_off, y_off);
-        this->normalize_op_.Run(&resize_img);
-        resize_imgs.push_back(resize_img);
-    }
-    std::vector<float> srcInputTensorValues(imgs.size() * 3 * resize_imgs[0].rows * resize_imgs[0].cols, 0.0f);
-    this->permute_op_.Run(resize_imgs, srcInputTensorValues.data());
-
-    InputNodeShapes[0] = { (int)imgs.size(),3,resize_imgs[0].rows,resize_imgs[0].cols };
-
-
-    input_tensors.push_back(Ort::Value::CreateTensor<float>(
-        memory_info_handler, srcInputTensorValues.data(), srcInputTensorValues.size(), \
-        InputNodeShapes[0].data(), InputNodeShapes[0].size()
-    ));
-  
-    std::vector<char*> OutputNodeNames;
-    std::vector<std::vector<int64_t>> OutputNodeShapes;
-    const size_t numOutputNodes = session->GetOutputCount();
-    OutputNodeNames.reserve(numOutputNodes);
-    for (size_t i = 0; i < numOutputNodes; i++)
-    {
-        OutputNodeNames.emplace_back(strdup(session->GetOutputNameAllocated(i, allocator).get()));
-        OutputNodeShapes.emplace_back(session->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
-    }
-    // Inference.
-    auto output_tensors = session->Run(Ort::RunOptions{ nullptr }, InputNodeNames.data(), input_tensors.data(), \
-        input_tensors.size(), OutputNodeNames.data(), OutputNodeNames.size());
-    auto output_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
-    float* pOutputData = (float*)output_tensors[0].GetTensorMutableData<float>();
-    int out_num = std::accumulate(output_shape.begin(), output_shape.end(), 1, std::multiplies<int>());
-    cv::Mat out_data(output_shape[0], output_shape[1], CV_32FC1, pOutputData);
-    for (int i = 0; i < out_data.rows; i++) {
-        FaceData obj;
-        obj.id = i;
-        std::string temp= Utility::basename(path[i]);
-        size_t dotPos = temp.find_last_of('.');
-        if (dotPos != std::string::npos) {
-            // 去掉点及其后面的部分
-            temp = temp.substr(0, dotPos);
-        }
-        obj.name = temp;
-        obj.feature = out_data.rowRange(i,i+1);
-        this->feature.push_back(obj);
-    }
 }
