@@ -2,12 +2,12 @@
 #include <opencv2/dnn.hpp>
 //#include<algorithm>
 void RETINAProcessor::BoxesFromRETINA(std::vector<cv::Mat>& output, std::vector<FACEPredictResult>& res, float confidence, float NMSthreshold,int img_w,int img_h) {
-    //�����+΢������λbox
+  
     std::vector<float> priorboxes;
     PriorBox(priorboxes, img_w, img_h);
     cv::Mat prior(priorboxes.size()/4, 4, CV_32FC1, (float*)priorboxes.data());
     cv::Mat boxes = Decode(prior, output[0]);
-    //�����+΢������λface_pts
+   
     cv::Mat pts = Decode_landm(prior, output[2]);
     //box
     float* pbox = (float*)boxes.data;
@@ -53,7 +53,7 @@ void RETINAProcessor::BoxesFromRETINA(std::vector<cv::Mat>& output, std::vector<
         }
     }
     std::vector<int> index;
-    cv::dnn::NMSBoxes(PreBox, PreConf,confidence,NMSthreshold, index);
+    cv::dnn::NMSBoxes(PreBox, PreConf, confidence, NMSthreshold, index);
     for (auto it : index) {
         FACEPredictResult obj;
         obj.box = PreBox[it];

@@ -43,7 +43,7 @@ void RETINA::prepareIONameCache() {
     for (auto& s : output_name_strs_) output_names_.push_back(s.c_str());
 }
 
-int RETINA::Run(cv::Mat& img, std::vector<FACEPredictResult>& FACEres, std::vector<double>& times) {
+int RETINA::Run(cv::Mat& img, std::vector<FACEPredictResult>& FACEres) {
     cv::Mat resize_img;
     img.copyTo(resize_img);
     normalize_op_.Run(&resize_img, mean_);

@@ -3,15 +3,9 @@
 
 #include <iostream>
 #include <opencv2/opencv.hpp>
-#include <onnxruntime_cxx_api.h>
 #include "face.h"
 #include <fstream>
 #include "ThreadPool.h"
-#include <queue>
-#include <mutex>
-#include <thread>
-#include <condition_variable>
-#include <future>
 #include "processor.h"
 
 int main(int argc, char* argv[])

@@ -2,7 +2,7 @@
 
 FACE::FACE()
 {
-    detector = std::make_unique<RETINA>("../model/mobilenet0.25_Final.onnx", 0.8, 0.3);
+    detector = std::make_unique<RETINA>("../model/mobilenet0.25_Final.onnx", 0.9, 0.3);
     recognizer = std::make_unique<ARCFACE>("../model/MFN.onnx", 112);
     aligner = std::make_unique<ALIGNMENT>();
 }
@@ -25,10 +25,9 @@ std::vector<FACEPredictResult> FACE::face(const cv::Mat& img) {
 }
 
 void FACE::det(const cv::Mat& img, std::vector<FACEPredictResult>& face_results, std::vector<cv::Mat>& aligned_faces) {
-    std::vector<double> det_times;
     face_results.clear();
     aligned_faces.clear();
-    detector->Run(const_cast<cv::Mat&>(img), face_results, det_times);
+    detector->Run(const_cast<cv::Mat&>(img), face_results);
     for (auto& res : face_results) {
         cv::Rect valid_box = res.box & cv::Rect(0, 0, img.cols, img.rows);
         if (valid_box.width > 0 && valid_box.height > 0) {

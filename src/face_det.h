@@ -10,7 +10,7 @@ public:
     RETINA(const std::string& model_dir, float confidence, float NMSthreshold);
 
     int LoadModel(const std::string& model_dir);
-    int Run(cv::Mat& img, std::vector<FACEPredictResult>& FACEres, std::vector<double>& times);
+    int Run(cv::Mat& img, std::vector<FACEPredictResult>& FACEres);
 
 private:
     std::vector<float> mean_ = {123, 117, 104}; // bgr
