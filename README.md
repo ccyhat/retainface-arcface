@@ -9,8 +9,8 @@
 ```
 ## quick start
 ```bash
-cmake -S . -B build
+cmake -S src -B build 
 cmake --build build
 ``` 
-## modle
+## model
 使用了arcface用于人脸识别,retainface用于人脸检测
