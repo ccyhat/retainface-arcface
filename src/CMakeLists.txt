@@ -18,8 +18,8 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${ONNX}/include/onnxruntime)     
 link_directories(${ONNX}/lib)
 
-# 指定为C++14 版本
-set(CMAKE_CXX_STANDARD 14)
+# 指定为C++17 版本
+set(CMAKE_CXX_STANDARD 17)
 
 add_executable(facesolution ${SOURCES})
 

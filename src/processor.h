@@ -10,15 +10,19 @@
 class Processor {
 public:
     Processor(FACE& face, cv::VideoCapture& cap, int pool_size = 20)
-        : face_(face), cap_(cap), pool_(pool_size), running_(true) {}
-
+        : face_(face), cap_(cap), pool_(pool_size), running_(true) {
+        // 判断是否为摄像头（帧数为0或1通常为摄像头）
+        is_camera_ = (cap_.get(cv::CAP_PROP_FRAME_COUNT) <= 1);
+    }
     void run() {
         // 采集任务
         auto capture_task = [&]() {
             while (running_) {
                 cv::Mat frame;
                 cap_ >> frame;
-                cv::flip(frame, frame, 1);
+                if (is_camera_) {
+                    cv::flip(frame, frame, 1); // 仅摄像头镜像
+                }
                 if (frame.empty()) continue;
                 {
                     std::lock_guard<std::mutex> lock(frame_mutex_);
@@ -119,4 +123,6 @@ private:
     std::mutex frame_mutex_, result_mutex_;
     std::condition_variable frame_cv_, result_cv_;
     bool running_;
+    bool is_camera_; // 新增成员变量
+
 };

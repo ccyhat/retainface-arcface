@@ -2,8 +2,8 @@
 
 FACE::FACE()
 {
-    detector = std::make_unique<RETINA>("../model/mobilenet0.25_Final.onnx", 0.9, 0.3);
-    recognizer = std::make_unique<ARCFACE>("../model/MFN.onnx", 112);
+    detector = std::make_unique<RETINA>("model/mobilenet0.25_Final.onnx", 0.9, 0.3);
+    recognizer = std::make_unique<ARCFACE>("model/MFN.onnx", 112);
     aligner = std::make_unique<ALIGNMENT>();
 }
 

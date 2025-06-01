@@ -109,7 +109,7 @@ int ARCFACE::Run(const std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult
                 best_name = it.name;
             }
         }
-        if (best_score > 0.5f) {
+        if (best_score > 0.3f) {
             FACEres[i].face_name = best_name;
             FACEres[i].score = best_score;
         } else {
