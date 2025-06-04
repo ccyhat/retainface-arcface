@@ -23,7 +23,7 @@ struct FACEPredictResult {
 };
 struct FaceData {
     int id;
-    std::vector<float> feature;
+    cv::Mat feature;
     std::string name;
 };
 

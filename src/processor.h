@@ -83,9 +83,9 @@ public:
                     cv::rectangle(show_frame, v[i].box, cv::Scalar(255, 0, 0));
                     if (v[i].face_name != "") {
                         int baseline = 0;
-                        cv::Size textSize = cv::getTextSize(v[i].face_name + "_" + std::to_string(v[i].score), cv::FONT_HERSHEY_SIMPLEX, 1.2, 1, &baseline);
+                        cv::Size textSize = cv::getTextSize(v[i].face_name + "_" + std::to_string(v[i].score), cv::FONT_HERSHEY_SIMPLEX, 1.2, 2, &baseline);
                         cv::rectangle(show_frame, v[i].box.tl() + cv::Point(0, baseline), v[i].box.tl() + cv::Point(textSize.width, -textSize.height), cv::Scalar(255, 0, 0), -1);
-                        cv::putText(show_frame, v[i].face_name + "_" + std::to_string(v[i].score), v[i].box.tl(), cv::FONT_HERSHEY_SIMPLEX, 1.2, cv::Scalar(255, 255, 255), 1);
+                        cv::putText(show_frame, v[i].face_name + "_" + std::to_string(v[i].score), v[i].box.tl(), cv::FONT_HERSHEY_SIMPLEX, 1.2, cv::Scalar(255, 255, 255), 2);
                     }
                 }
                 // FPS

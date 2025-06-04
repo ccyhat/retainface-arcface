@@ -83,7 +83,8 @@ void ARCFACE::GetFeature(const std::vector<std::string>& paths, const std::vecto
         size_t dotPos = temp.find_last_of('.');
         if (dotPos != std::string::npos) temp = temp.substr(0, dotPos);
         obj.name = temp;
-        obj.feature.assign(features.ptr<float>(i), features.ptr<float>(i) + features.cols);
+        obj.feature=features.row(i).clone();
+        cv::normalize(obj.feature, obj.feature);
         feature_db_.push_back(obj);
     }
 }
@@ -92,18 +93,14 @@ int ARCFACE::Run(const std::vector<cv::Mat>& imgs, std::vector<FACEPredictResult
     if (imgs.empty() || feature_db_.empty()) return -1;
     cv::Mat features;
     extractFeature(imgs, features);
-
     FACEres.resize(features.rows);
     for (int i = 0; i < features.rows; ++i) {
         cv::Mat tempfeature = features.row(i);
         cv::normalize(tempfeature, tempfeature);
-
         float best_score = -1.0f;
         std::string best_name = "unknown";
         for (const auto& it : feature_db_) {
-            cv::Mat dbfeature(1, tempfeature.cols, CV_32FC1, const_cast<float*>(it.feature.data()));
-            cv::normalize(dbfeature, dbfeature);
-            float cosine = tempfeature.dot(dbfeature);
+            float cosine = tempfeature.dot(it.feature);
             if (cosine > best_score) {
                 best_score = cosine;
                 best_name = it.name;
